@@ -3,28 +3,18 @@ package dnspodclient
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"ddnsjx/internal/dns"
+	"ddnsjx/internal/provider"
 
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
 	dnspod "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/dnspod/v20210323"
 )
-
-type CreateStatus string
-
-const (
-	CreateStatusSuccess CreateStatus = "success"
-	CreateStatusExists  CreateStatus = "exists"
-	CreateStatusFail    CreateStatus = "fail"
-)
-
-type Client interface {
-	CreateRecord(ctx context.Context, domain, recordLine string, record dns.Record) (uint64, CreateStatus, error)
-	DeleteRecord(ctx context.Context, domain string, recordID uint64) error
-}
 
 type NewOptions struct {
 	SecretID  string
@@ -46,6 +36,15 @@ func (e Error) Error() string {
 		return e.Message
 	}
 	return fmt.Sprintf("[%s] %s", e.Code, e.Message)
+}
+
+func (e Error) Retryable() bool {
+	switch e.Code {
+	case "ResourceInsufficient.OverLimit", "RequestLimitExceeded", "InternalError", "InternalError.Unknown":
+		return true
+	default:
+		return false
+	}
 }
 
 func IsRetryable(err error) bool {
@@ -73,7 +72,7 @@ func AsError(err error, target *Error) bool {
 	return true
 }
 
-func New(opt NewOptions) (Client, error) {
+func New(opt NewOptions) (provider.Client, error) {
 	if opt.SecretID == "" || opt.SecretKey == "" {
 		return nil, fmt.Errorf("missing credentials")
 	}
@@ -91,7 +90,11 @@ func New(opt NewOptions) (Client, error) {
 	return &client{sdk: sdk}, nil
 }
 
-func (c *client) CreateRecord(ctx context.Context, domain, recordLine string, record dns.Record) (uint64, CreateStatus, error) {
+func (c *client) IsSupportedRecordType(t string) bool {
+	return IsSupportedRecordType(t)
+}
+
+func (c *client) CreateRecord(ctx context.Context, domain, recordLine string, record dns.Record) (string, provider.CreateStatus, error) {
 	req := dnspod.NewCreateRecordRequest()
 	req.Domain = common.StringPtr(domain)
 	req.RecordType = common.StringPtr(record.Type)
@@ -113,29 +116,33 @@ func (c *client) CreateRecord(ctx context.Context, domain, recordLine string, re
 
 	resp, err := c.sdk.CreateRecord(req)
 	if err == nil {
-		return *resp.Response.RecordId, CreateStatusSuccess, nil
+		return strconv.FormatUint(*resp.Response.RecordId, 10), provider.CreateStatusSuccess, nil
 	}
 
 	if sdkErr, ok := err.(*errors.TencentCloudSDKError); ok {
 		switch sdkErr.Code {
 		case "InvalidParameter.RecordExists":
-			return 0, CreateStatusExists, nil
+			return "", provider.CreateStatusExists, nil
 		default:
-			return 0, CreateStatusFail, Error{Code: sdkErr.Code, Message: sdkErr.Message}
+			return "", provider.CreateStatusFail, Error{Code: sdkErr.Code, Message: sdkErr.Message}
 		}
 	}
 
-	return 0, CreateStatusFail, err
+	return "", provider.CreateStatusFail, err
 }
 
-func (c *client) DeleteRecord(ctx context.Context, domain string, recordID uint64) error {
+func (c *client) DeleteRecord(ctx context.Context, domain string, recordID string) error {
+	id, err := strconv.ParseUint(strings.TrimSpace(recordID), 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid record id %q: %w", recordID, err)
+	}
 	req := dnspod.NewDeleteRecordRequest()
 	req.Domain = common.StringPtr(domain)
-	req.RecordId = common.Uint64Ptr(recordID)
+	req.RecordId = common.Uint64Ptr(id)
 	if ctx != nil {
 		req.SetContext(ctx)
 	}
-	_, err := c.sdk.DeleteRecord(req)
+	_, err = c.sdk.DeleteRecord(req)
 	return err
 }
 

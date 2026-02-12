@@ -2,26 +2,28 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"time"
 
 	"ddnsjx/internal/dns"
-	"ddnsjx/internal/dnspodclient"
+	"ddnsjx/internal/provider"
 )
 
 type RunnerOptions struct {
 	SleepBetween time.Duration
 	Retries      int
+	Upsert       bool
 }
 
 type Runner struct {
-	client dnspodclient.Client
+	client provider.Client
 	opt    RunnerOptions
 }
 
-func NewRunner(client dnspodclient.Client, opt RunnerOptions) *Runner {
+func NewRunner(client provider.Client, opt RunnerOptions) *Runner {
 	if opt.Retries < 0 {
 		opt.Retries = 0
 	}
@@ -46,7 +48,7 @@ func PrintPlan(w io.Writer, plan dns.Plan) {
 }
 
 func (r *Runner) Apply(ctx context.Context, plan dns.Plan) error {
-	var created []uint64
+	var created []string
 
 	fmt.Printf("Plan: domain=%s records=%d\n", plan.Domain, len(plan.Records))
 	fmt.Println(strings.Repeat("-", 72))
@@ -58,18 +60,24 @@ func (r *Runner) Apply(ctx context.Context, plan dns.Plan) error {
 		}
 		fmt.Printf("%s ... ", prefix)
 
-		id, status, err := r.createWithRetry(ctx, plan.Domain, plan.RecordLine, rec)
-		switch status {
-		case dnspodclient.CreateStatusSuccess:
-			fmt.Printf("OK (ID: %d)\n", id)
-			created = append(created, id)
-		case dnspodclient.CreateStatusExists:
-			fmt.Println("exists (skip)")
-		default:
+		id, action, err := r.applyOneWithRetry(ctx, plan.Domain, plan.RecordLine, rec)
+		if err != nil {
 			fmt.Printf("failed: %s\n", err.Error())
 			fmt.Println("rollback...")
 			r.rollback(ctx, plan.Domain, created)
 			return err
+		}
+
+		switch action {
+		case "created":
+			fmt.Printf("OK (ID: %s)\n", id)
+			created = append(created, id)
+		case "exists":
+			fmt.Println("exists (skip)")
+		case "updated":
+			fmt.Printf("updated (ID: %s)\n", id)
+		default:
+			fmt.Println("OK")
 		}
 
 		if r.opt.SleepBetween > 0 {
@@ -82,7 +90,7 @@ func (r *Runner) Apply(ctx context.Context, plan dns.Plan) error {
 	return nil
 }
 
-func (r *Runner) createWithRetry(ctx context.Context, domain, recordLine string, rec dns.Record) (uint64, dnspodclient.CreateStatus, error) {
+func (r *Runner) applyOneWithRetry(ctx context.Context, domain, recordLine string, rec dns.Record) (recordID string, action string, err error) {
 	attempts := 1
 	if r.opt.Retries > 0 {
 		attempts += r.opt.Retries
@@ -91,24 +99,40 @@ func (r *Runner) createWithRetry(ctx context.Context, domain, recordLine string,
 	var lastErr error
 	for i := 0; i < attempts; i++ {
 		id, status, err := r.client.CreateRecord(ctx, domain, recordLine, rec)
+		if err == nil && status == provider.CreateStatusSuccess {
+			return id, "created", nil
+		}
+		if err == nil && status == provider.CreateStatusExists {
+			if !r.opt.Upsert {
+				return "", "exists", nil
+			}
+			existingID, found, findErr := r.client.FindRecord(ctx, domain, recordLine, rec)
+			if findErr != nil {
+				return "", "", findErr
+			}
+			if !found || existingID == "" {
+				return "", "", fmt.Errorf("record exists but cannot locate record id for update: %s %s", rec.Type, rec.SubDomain)
+			}
+			if updErr := r.client.UpdateRecord(ctx, domain, recordLine, existingID, rec); updErr != nil {
+				return "", "", updErr
+			}
+			return existingID, "updated", nil
+		}
 		if err == nil {
-			return id, status, nil
+			return "", "", fmt.Errorf("unexpected create status: %s", status)
 		}
-		if status == dnspodclient.CreateStatusExists {
-			return 0, status, nil
-		}
-		if !dnspodclient.IsRetryable(err) {
-			return 0, status, err
+		if !isRetryable(err) {
+			return "", "", err
 		}
 		lastErr = err
 		backoff := time.Duration(250*(i+1)) * time.Millisecond
-		_ = dnspodclient.SleepWithContext(ctx, backoff)
+		_ = sleepWithContext(ctx, backoff)
 	}
 
-	return 0, dnspodclient.CreateStatusFail, lastErr
+	return "", "", lastErr
 }
 
-func (r *Runner) rollback(ctx context.Context, domain string, ids []uint64) {
+func (r *Runner) rollback(ctx context.Context, domain string, ids []string) {
 	if len(ids) == 0 {
 		return
 	}
@@ -117,7 +141,30 @@ func (r *Runner) rollback(ctx context.Context, domain string, ids []uint64) {
 	for i := len(ids) - 1; i >= 0; i-- {
 		id := ids[i]
 		_ = r.client.DeleteRecord(ctx, domain, id)
-		fmt.Printf("reverted %d\n", id)
-		_ = dnspodclient.SleepWithContext(ctx, r.opt.SleepBetween)
+		fmt.Printf("reverted %s\n", id)
+		_ = sleepWithContext(ctx, r.opt.SleepBetween)
+	}
+}
+
+type retryable interface {
+	Retryable() bool
+}
+
+func isRetryable(err error) bool {
+	var r retryable
+	return errors.As(err, &r) && r.Retryable()
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
 	}
 }

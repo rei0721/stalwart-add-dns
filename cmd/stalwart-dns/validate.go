@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	"ddnsjx/internal/dns"
-	"ddnsjx/internal/dnspodclient"
+	"ddnsjx/internal/provider"
 )
 
-func validateOrFilterPlanForDNSPod(plan dns.Plan, skipUnsupported bool) (dns.Plan, error) {
+func validateOrFilterPlan(plan dns.Plan, client provider.Client, skipUnsupported bool) (dns.Plan, error) {
 	var (
 		filtered    []dns.Record
 		unsupported = make(map[string]struct{}, 4)
@@ -17,7 +17,7 @@ func validateOrFilterPlanForDNSPod(plan dns.Plan, skipUnsupported bool) (dns.Pla
 
 	for _, r := range plan.Records {
 		t := strings.ToUpper(strings.TrimSpace(r.Type))
-		if dnspodclient.IsSupportedRecordType(t) {
+		if client.IsSupportedRecordType(t) {
 			filtered = append(filtered, r)
 			continue
 		}
@@ -33,7 +33,7 @@ func validateOrFilterPlanForDNSPod(plan dns.Plan, skipUnsupported bool) (dns.Pla
 			types = append(types, t)
 		}
 		sort.Strings(types)
-		return dns.Plan{}, fmt.Errorf("unsupported DNSPod record type(s): %s (use --skip-unsupported to ignore them)", strings.Join(types, ", "))
+		return dns.Plan{}, fmt.Errorf("unsupported record type(s) for provider: %s (use --skip-unsupported to ignore them)", strings.Join(types, ", "))
 	}
 
 	plan.Records = filtered
