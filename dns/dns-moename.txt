@@ -1,0 +1,21 @@
+Type	Name	Contents
+MX	moename.eu.org.	10 mail.iqwq.com.
+CNAME	mail.moename.eu.org.	mail.iqwq.com.
+TXT	202602e._domainkey.moename.eu.org.	v=DKIM1; k=ed25519; h=sha256; p=ka8DW3DtX61yga+MbNhJStJpzxa8AYjnO3aECOEcktY=
+TXT	202602r._domainkey.moename.eu.org.	v=DKIM1; k=rsa; h=sha256; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxB8EupGn6SO5rduA6HT7cDPUl7A5kRtuv3i8ZKGWprypG5+i9dXjFv0lELM0EDYrVKEQZFq8EbmHL4L7/mE/k/GkA/alXQHCVsGui1UpxMcGDyWkRsV9sYqkRUDemw6E9kZIytjSI9s7FI6O972WPRxqOg5HHA9EkX8Jaw3TVEwyUpXw8S2MQQmOwL5VD6C4ecrPoQoyB4c7vZCXhjh90xIbr7RknKbVPXTawP8k4q7GFNXW+0H4LTLWjDLDLJlrs3dHAWuUK11dJ2ZU+SC+XRIn6PGqGCP3w69HbU3L/e9zdrciAxXVW7EJKP1ghUEA7RJalF8gHNysc9Vk3jtELwIDAQAB
+TXT	moename.eu.org.	v=spf1 mx ra=postmaster -all
+SRV	_jmap._tcp.moename.eu.org.	0 1 443 mail.iqwq.com.
+SRV	_caldavs._tcp.moename.eu.org.	0 1 443 mail.iqwq.com.
+SRV	_carddavs._tcp.moename.eu.org.	0 1 443 mail.iqwq.com.
+SRV	_imaps._tcp.moename.eu.org.	0 1 993 mail.iqwq.com.
+SRV	_imap._tcp.moename.eu.org.	0 1 143 mail.iqwq.com.
+SRV	_pop3s._tcp.moename.eu.org.	0 1 995 mail.iqwq.com.
+SRV	_pop3._tcp.moename.eu.org.	0 1 110 mail.iqwq.com.
+SRV	_submissions._tcp.moename.eu.org.	0 1 465 mail.iqwq.com.
+SRV	_submission._tcp.moename.eu.org.	0 1 587 mail.iqwq.com.
+CNAME	autoconfig.moename.eu.org.	mail.iqwq.com.
+CNAME	autodiscover.moename.eu.org.	mail.iqwq.com.
+CNAME	mta-sts.moename.eu.org.	mail.iqwq.com.
+TXT	_mta-sts.moename.eu.org.	v=STSv1; id=1045086837870925454
+TXT	_dmarc.moename.eu.org.	v=DMARC1; p=reject; rua=mailto:postmaster@moename.eu.org; ruf=mailto:postmaster@moename.eu.org
+TXT	_smtp._tls.moename.eu.org.	v=TLSRPTv1; rua=mailto:postmaster@moename.eu.org

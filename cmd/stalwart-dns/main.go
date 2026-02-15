@@ -40,12 +40,13 @@ func main() {
 
 		cfToken  = flag.String("cf-token", "", "Cloudflare API token (empty: use env CLOUDFLARE_API_TOKEN)")
 		cfZoneID = flag.String("cf-zone-id", "", "Cloudflare zone id (optional, empty: query by zone name)")
+		replace  = flag.String("replace-target", "", "replace value/target in records, format: old=new (for --init)")
 	)
 
 	flag.Parse()
 
 	if *initCfg {
-		if err := initConfigFromDNSTxt(*dnsTxtPath, *configPath, *force); err != nil {
+		if err := initConfigFromDNSTxt(*dnsTxtPath, *configPath, *force, *replace); err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
@@ -136,6 +137,9 @@ func main() {
 
 	ctx := context.Background()
 	if err := runner.Apply(ctx, plan); err != nil {
+		if strings.Contains(err.Error(), "dial tcp") || strings.Contains(err.Error(), "lookup") {
+			fmt.Fprintln(os.Stderr, "\n[Network Error] Connection failed. Please check your network settings or set HTTP_PROXY/HTTPS_PROXY environment variables.")
+		}
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}

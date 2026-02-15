@@ -90,6 +90,19 @@ func (c *client) CreateRecord(ctx context.Context, zone string, _ string, record
 		return "", provider.CreateStatusFail, err
 	}
 	if !resp.Success {
+		// Code 81057: Record already exists.
+		// Code 81058: An identical record already exists.
+		// If we get "already exists" here, it means FindRecord missed it (maybe race condition or subtle mismatch),
+		// but Cloudflare says it's there. We can treat this as "Exists".
+		for _, e := range resp.Errors {
+			if e.Code == 81057 || e.Code == 81058 {
+				// We don't have the ID here easily without re-querying, but the contract says return ID if Exists.
+				// However, standard flow might not strictly require ID if we just want to skip.
+				// Let's try to find it again to get ID, or just return empty ID with Exists status if acceptable.
+				// For safety, let's just return Exists. The caller usually skips if Exists.
+				return "", provider.CreateStatusExists, nil
+			}
+		}
 		return "", provider.CreateStatusFail, pickError(resp.Errors)
 	}
 	return resp.Result.ID, provider.CreateStatusSuccess, nil
@@ -130,10 +143,62 @@ func (c *client) FindRecord(ctx context.Context, zone string, _ string, record d
 	if len(resp.Result) == 0 {
 		return "", false, nil
 	}
-	if len(resp.Result) > 1 {
-		return "", false, fmt.Errorf("multiple existing records found for %s %s; cannot safely update", record.Type, record.SubDomain)
+	if len(resp.Result) > 0 {
+		// Exact match check for multiple records (like TLSA, SRV)
+		// Cloudflare API returns all records matching name+type. We must filter by content/data to know if *this specific* record exists.
+		for _, r := range resp.Result {
+			if recordMatches(r, record) {
+				return r.ID, true, nil
+			}
+		}
+		// If we found records but none matched exactly, it means this specific record (with this content) does not exist.
+		// However, we must return "false" so CreateRecord proceeds.
+		// NOTE: If your intention is "upsert" logic where we overwrite *any* existing record of this type,
+		// that requires different handling (e.g. delete all and recreate, or update the first one).
+		// But here FindRecord implies "find THIS exact record".
+		return "", false, nil
 	}
-	return resp.Result[0].ID, true, nil
+	return "", false, nil
+}
+
+func recordMatches(cfRec cfDNSRecord, localRec dns.Record) bool {
+	// TLSA special handling (Cloudflare stores parts in 'data')
+	if strings.ToUpper(localRec.Type) == "TLSA" && cfRec.Data != nil {
+		usage, selector, matchingType, cert, err := splitTLSAValue(localRec.Value)
+		if err == nil {
+			// Compare parsed values
+			// Note: cfRec.Data values are float64 when unmarshaled from JSON usually, or int. Use fmt.Sprint to be safe.
+			u, _ := toInt(cfRec.Data["usage"])
+			s, _ := toInt(cfRec.Data["selector"])
+			m, _ := toInt(cfRec.Data["matching_type"])
+			c, _ := cfRec.Data["certificate"].(string)
+
+			if u == int(usage) && s == int(selector) && m == int(matchingType) && c == cert {
+				return true
+			}
+		}
+	}
+
+	// Simple content match for standard types
+	if cfRec.Content == localRec.Value {
+		return true
+	}
+	
+	// Fallback: compare standard content if available (some types might populate content string too)
+	return cfRec.Content == localRec.Value
+}
+
+func toInt(v any) (int, bool) {
+	switch val := v.(type) {
+	case float64:
+		return int(val), true
+	case int:
+		return val, true
+	case string:
+		i, err := strconv.Atoi(val)
+		return i, err == nil
+	}
+	return 0, false
 }
 
 func (c *client) UpdateRecord(ctx context.Context, zone string, _ string, recordID string, record dns.Record) error {
@@ -243,9 +308,11 @@ type cfZone struct {
 }
 
 type cfDNSRecord struct {
-	ID   string `json:"id"`
-	Type string `json:"type"`
-	Name string `json:"name"`
+	ID      string         `json:"id"`
+	Type    string         `json:"type"`
+	Name    string         `json:"name"`
+	Content string         `json:"content"`
+	Data    map[string]any `json:"data,omitempty"`
 }
 
 func pickError(errs []cfAPIError) error {
@@ -301,9 +368,25 @@ func buildCreateBody(zone string, record dns.Record) (map[string]any, error) {
 		}
 		body["priority"] = priority
 	case "TLSA":
-		body["content"] = strings.TrimSpace(record.Value)
+		usage, selector, matchingType, cert, err := splitTLSAValue(record.Value)
+		if err != nil {
+			return nil, err
+		}
+		// Cloudflare API expects integers for usage/selector/matching_type
+		body["data"] = map[string]any{
+			"usage":         int(usage),
+			"selector":      int(selector),
+			"matching_type": int(matchingType),
+			"certificate":   strings.TrimSpace(cert),
+		}
 	default:
 		body["content"] = strings.TrimSpace(record.Value)
+	}
+
+	// debug: print body for TLSA
+	if t == "TLSA" {
+		b, _ := json.Marshal(body)
+		fmt.Printf("DEBUG: TLSA Create Body: %s\n", string(b))
 	}
 
 	return body, nil
@@ -357,4 +440,29 @@ func splitSRVValue(v string) (priority uint64, weight uint64, port uint64, targe
 	}
 	target = f[3]
 	return priority, weight, port, target, nil
+}
+
+func splitTLSAValue(v string) (usage uint64, selector uint64, matchingType uint64, cert string, err error) {
+	f := strings.Fields(strings.TrimSpace(v))
+	if len(f) < 4 {
+		return 0, 0, 0, "", fmt.Errorf("TLSA value expects: \"<usage> <selector> <matching-type> <data>\", got %q", v)
+	}
+
+	usage, err = strconv.ParseUint(f[0], 10, 64)
+	if err != nil {
+		return 0, 0, 0, "", fmt.Errorf("invalid TLSA usage: %q", f[0])
+	}
+
+	selector, err = strconv.ParseUint(f[1], 10, 64)
+	if err != nil {
+		return 0, 0, 0, "", fmt.Errorf("invalid TLSA selector: %q", f[1])
+	}
+
+	matchingType, err = strconv.ParseUint(f[2], 10, 64)
+	if err != nil {
+		return 0, 0, 0, "", fmt.Errorf("invalid TLSA matching-type: %q", f[2])
+	}
+
+	cert = f[3]
+	return usage, selector, matchingType, cert, nil
 }

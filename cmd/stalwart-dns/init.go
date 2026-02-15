@@ -10,7 +10,7 @@ import (
 	"ddnsjx/internal/dnstxt"
 )
 
-func initConfigFromDNSTxt(dnsTxtPath string, configPath string, force bool) error {
+func initConfigFromDNSTxt(dnsTxtPath string, configPath string, force bool, replaceTarget string) error {
 	dnsTxtPath = strings.TrimSpace(dnsTxtPath)
 	configPath = strings.TrimSpace(configPath)
 	if dnsTxtPath == "" {
@@ -36,6 +36,10 @@ func initConfigFromDNSTxt(dnsTxtPath string, configPath string, force bool) erro
 		}
 	}
 
+	if replaceTarget != "" {
+		applyReplacements(records, replaceTarget)
+	}
+
 	cfg := config.FileConfig{Records: records}
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -46,4 +50,35 @@ func initConfigFromDNSTxt(dnsTxtPath string, configPath string, force bool) erro
 		return fmt.Errorf("write %s: %w", configPath, err)
 	}
 	return nil
+}
+
+func applyReplacements(records []config.RawRecord, replaceTarget string) {
+	parts := strings.SplitN(replaceTarget, "=", 2)
+	if len(parts) != 2 {
+		fmt.Fprintf(os.Stderr, "warning: invalid replace format %q (expected old=new), ignoring\n", replaceTarget)
+		return
+	}
+	oldStr, newStr := parts[0], parts[1]
+	if oldStr == "" {
+		return
+	}
+
+	for i := range records {
+		r := &records[i]
+		// Replace in Contents
+		if strings.Contains(r.Contents, oldStr) {
+			r.Contents = strings.ReplaceAll(r.Contents, oldStr, newStr)
+		}
+		// Replace in Parsed fields
+		if r.Parsed != nil {
+			if r.Parsed.Exchange != nil && strings.Contains(*r.Parsed.Exchange, oldStr) {
+				newVal := strings.ReplaceAll(*r.Parsed.Exchange, oldStr, newStr)
+				r.Parsed.Exchange = &newVal
+			}
+			if r.Parsed.Target != nil && strings.Contains(*r.Parsed.Target, oldStr) {
+				newVal := strings.ReplaceAll(*r.Parsed.Target, oldStr, newStr)
+				r.Parsed.Target = &newVal
+			}
+		}
+	}
 }

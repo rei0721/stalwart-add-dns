@@ -24,6 +24,7 @@ func runConvert(args []string) int {
 		pretty     = fs.Bool("pretty", true, "pretty-print JSON")
 		force      = fs.Bool("force", false, "write outputs even if issues exist")
 		defaultTTL = fs.Uint64("default-ttl", 300, "default TTL for zone output (ignored if --zone is empty)")
+		replace    = fs.String("replace-target", "", "replace value/target in records, format: old=new")
 	)
 
 	if err := fs.Parse(args); err != nil {
@@ -34,6 +35,10 @@ func runConvert(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "read dns.txt:", err.Error())
 		return 1
+	}
+
+	if *replace != "" {
+		applyReplacements(records, *replace)
 	}
 
 	printIssues(issues)

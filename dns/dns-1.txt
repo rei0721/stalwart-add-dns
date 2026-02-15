@@ -1,0 +1,29 @@
+Type	Name	Contents
+MX	iqwq.com.	10 mail.iqwq.com.
+TXT	202602e._domainkey.iqwq.com.	v=DKIM1; k=ed25519; h=sha256; p=Aou4jiLdXftQFXoO99jRtIRJ5KEg1hnGjZVt+71nkW4=
+TXT	202602r._domainkey.iqwq.com.	v=DKIM1; k=rsa; h=sha256; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzvaB9UQfeKZtkRgQQib1a/bI4b8bLwqWTBRdQPyp94yt1xMLeBuO6M3oFgOxmqs+bYYIEXa8AzFMOMSALMvZcyr4wl3hekSDcDCU4qVdXq+Crck/DOPw/EOa7iYkqHdykKhmY6Ie10GEJqhdb2UOkbHYU8veArkWiN4WuMOLCNSs25Q8KoD1lH2KQdaqPLnwjJfJ8CAWvr8RpO838w5lzNSTIl/jCfGw7yHYc4HFxm6hZWa/7j91U7fqpkTRBC1IkjxgB1D+QOB+NXYSTVkoygql6P6NmBuzee+VfDikJoxY0tJNEM5Tcd4ennmb6/0c9H8vwt93kUYESSj1Km4OgQIDAQAB
+TXT	mail.iqwq.com.	v=spf1 a ra=postmaster -all
+TXT	iqwq.com.	v=spf1 mx ra=postmaster -all
+SRV	_jmap._tcp.iqwq.com.	0 1 443 mail.iqwq.com.
+SRV	_caldavs._tcp.iqwq.com.	0 1 443 mail.iqwq.com.
+SRV	_carddavs._tcp.iqwq.com.	0 1 443 mail.iqwq.com.
+SRV	_imaps._tcp.iqwq.com.	0 1 993 mail.iqwq.com.
+SRV	_imap._tcp.iqwq.com.	0 1 143 mail.iqwq.com.
+SRV	_pop3s._tcp.iqwq.com.	0 1 995 mail.iqwq.com.
+SRV	_pop3._tcp.iqwq.com.	0 1 110 mail.iqwq.com.
+SRV	_submissions._tcp.iqwq.com.	0 1 465 mail.iqwq.com.
+SRV	_submission._tcp.iqwq.com.	0 1 587 mail.iqwq.com.
+CNAME	autoconfig.iqwq.com.	mail.iqwq.com.
+CNAME	autodiscover.iqwq.com.	mail.iqwq.com.
+CNAME	mta-sts.iqwq.com.	mail.iqwq.com.
+TXT	_mta-sts.iqwq.com.	v=STSv1; id=1045086837870925454
+TXT	_dmarc.iqwq.com.	v=DMARC1; p=reject; rua=mailto:postmaster@iqwq.com; ruf=mailto:postmaster@iqwq.com
+TXT	_smtp._tls.iqwq.com.	v=TLSRPTv1; rua=mailto:postmaster@iqwq.com
+TLSA	_25._tcp.iqwq.com.	3 0 1 d4022c421c8160eed99be9f5949a94ab5a8ddbff78ff2b94f78d36cd513904c3
+TLSA	_25._tcp.iqwq.com.	3 0 2 522ce29f58386690b21ec1e90bde695ca126005b6a5a9e6a53797e05972b18e41a57655eaa303918ec95c9531a5ca3444a748f128b43474541903c440b2ad263
+TLSA	_25._tcp.iqwq.com.	3 1 1 687b819cd659c9aa1c62b4aeeb7362f6eefe5a132b8ac3120d73b74d14196b7e
+TLSA	_25._tcp.iqwq.com.	3 1 2 2040430fc0c6fcfd2c6992b16dd4da48e1f7297c5a227bd1d300d76c8e69b3ddbf062cfa258d2f32cd6bf7e6213ebc23f39aab28f726b123f6319cc4efc41da5
+TLSA	_25._tcp.iqwq.com.	2 0 1 aeb1fd7410e83bc96f5da3c6a7c2c1bb836d1fa5cb86e708515890e428a8770b
+TLSA	_25._tcp.iqwq.com.	2 0 2 e18f3d6ccbc578f025c3c7c29ed7bffe1b8eef5b1f839c17298dcf218303d2a63e305f6c1f489691774a18bad836035e5af2de1fc42a3a26cfe9e530f92e3855
+TLSA	_25._tcp.iqwq.com.	2 1 1 cbbc559b44d524d6a132bdac672744da3407f12aae5d5f722c5f6c7913871c75
+TLSA	_25._tcp.iqwq.com.	2 1 2 7d779dd26d37ca5a72fd05f1b815a06078c8e09777697c651fbe012c8d2894e048fcfe24160ee1562602240b6bef44e00f2b7340c84546d6110842bbdeb484a7
